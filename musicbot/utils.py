@@ -165,3 +165,12 @@ def _get_variable(name):
                 del frame
     finally:
         del stack
+
+def progress_bar(percent, divs=12):
+    bar = "";
+    for i in range(divs):
+        if(i == int(percent*divs)):
+            bar+='🔘'
+        else:
+            bar+='▬'
+    return bar
