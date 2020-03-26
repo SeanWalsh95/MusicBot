@@ -35,7 +35,7 @@ from .config import Config, ConfigDefaults
 from .permissions import Permissions, PermissionsDefaults
 from .aliases import Aliases, AliasesDefault
 from .constructs import SkipState, Response
-from .utils import load_file, write_file, fixg, ftimedelta, _func_, _get_variable
+from .utils import load_file, write_file, fixg, ftimedelta, progress_bar, _func_, _get_variable
 from .spotify import Spotify
 from .json import Json
 
@@ -101,6 +101,7 @@ class MusicBot(discord.Client):
         # TODO: Do these properly
         ssd_defaults = {
             'last_np_msg': None,
+            'live_np_prog': None,
             'auto_paused': False,
             'availability_paused': False
         }
@@ -124,6 +125,9 @@ class MusicBot(discord.Client):
                 self.config._spotify = False
                 time.sleep(5)  # make sure they see the problem
 
+        self.lp_update_task = self.loop.create_task(self.update_live_np_msg())
+
+
     def get(self, *args, **kwargs):
 
         str_key = self.str.get(args[0],None)
@@ -136,6 +140,24 @@ class MusicBot(discord.Client):
         else:
             return str_key.format(*args[1:], **kwargs).strip()
 
+
+    async def update_live_np_msg(self):
+        await self.wait_until_ready()
+
+        while not self.is_closed():
+            try:
+                for guild in self.guilds:
+                    player = self.get_player_in(guild)
+                    if player:
+                        last_msg = self.server_specific_data[player.voice_client.guild].get('live_np_prog', None)
+                        if last_msg:
+                            new_embd = self.get_np_live_progress(player)
+                            await last_msg.edit(embed=new_embd)
+            except Exception as e:
+                pass
+                # print("ERR NP Task: {}".format(e))
+
+            await asyncio.sleep(10)
 
     # TODO: Add some sort of `denied` argument for a message to send when someone else tries to use it
     def owner_only(func):
@@ -469,6 +491,55 @@ class MusicBot(discord.Client):
 
         return player
 
+    def get_np_live_progress(self, player):
+        author = player.current_entry.meta.get('author', None)
+
+        # TODO: Fix timedelta garbage with util function
+        song_progress = ftimedelta(timedelta(seconds=player.progress))
+        song_total = ftimedelta(timedelta(seconds=player.current_entry.duration))
+
+        e = discord.Embed()
+        e.title="**{}**".format(player.current_entry.title)
+        e.url=player.current_entry.url
+        if author:
+            e.description= '{}{}`{}`\n{}'.format(
+                {True: '▶', False: '⏸️'}[player.is_playing],
+                progress_bar(float(player.progress)/player.current_entry.duration, divs=24),
+                '[{}/{}]'.format(song_progress, song_total),
+                author.mention
+            )
+        else:
+            e.description= '{}{}`{}`'.format(
+                {True: '▶', False: '⏸️'}[player.is_playing],
+                progress_bar(float(player.progress)/player.current_entry.duration, divs=24),
+                '[{}/{}]'.format(song_progress, song_total)
+            )
+    
+        return e
+
+    def get_np_embed(self, player, footer=None):
+        author = player.current_entry.meta.get('author', None)
+
+        # TODO: Fix timedelta garbage with util function
+        song_progress = ftimedelta(timedelta(seconds=player.progress))
+        song_total = ftimedelta(timedelta(seconds=player.current_entry.duration))
+
+        e = discord.Embed()
+        e.title="**{}**".format(player.current_entry.title)
+        e.url=player.current_entry.url
+        if author:
+            e.description= '`{}` {}'.format(
+                song_total,
+                author.mention
+            )
+        else:
+            e.description= '`{}`'.format( song_total )
+        if "youtube" in player.current_entry.url:
+            e.set_image(url='https://img.youtube.com/vi/{}/hqdefault.jpg'.format(player.current_entry.url.split('v=')[-1]))
+        if footer:
+            e.set_footer(text=footer)
+
+        return e
     async def on_player_play(self, player, entry):
         log.debug('Running on_player_play')
         await self.update_now_playing_status(entry)
@@ -487,19 +558,24 @@ class MusicBot(discord.Client):
             author_perms = self.permissions.for_user(author)
 
             if author not in player.voice_client.channel.members and author_perms.skip_when_absent:
-                newmsg = 'Skipping next song in `%s`: `%s` added by `%s` as queuer not in voice' % (
-                    player.voice_client.channel.name, entry.title, entry.meta['author'].name)
+                newmsg = self.get(
+                    'evnt-player-play-author-not-in-channel',
+                    entry.title,
+                    entry.meta['author'].name
+                )
                 player.skip()
             elif self.config.now_playing_mentions:
-                newmsg = '%s - your song `%s` is now playing in `%s`!' % (
-                    entry.meta['author'].mention, entry.title, player.voice_client.channel.name)
+                newmsg = self.get(
+                    'evnt-player-play-dm-author',
+                    entry.meta['author'].mention,
+                    entry.title,
+                    player.voice_client.channel.name
+                )
             else:
-                newmsg = 'Now playing in `%s`: `%s` added by `%s`' % (
-                    player.voice_client.channel.name, entry.title, entry.meta['author'].name)
+                newmsg = self.get_np_embed(player)
         else:
             # no author (and channel), it's an autoplaylist (or autostream from my other PR) entry.
-            newmsg = 'Now playing automatically added entry `%s` in `%s`' % (
-                entry.title, player.voice_client.channel.name)
+            newmsg = self.get_np_embed(player, footer='automatically added')
 
         if newmsg:
             if self.config.dm_nowplaying and author:
@@ -1129,6 +1205,9 @@ class MusicBot(discord.Client):
         e.set_footer(text='Just-Some-Bots/MusicBot ({})'.format(BOTVERSION), icon_url='https://i.imgur.com/gFHBoZA.png')
         e.set_author(name=self.user.name, url='https://github.com/Just-Some-Bots/MusicBot', icon_url=self.user.avatar_url)
         return e
+
+    async def cmd_pbar(self, player, channel):
+        self.server_specific_data[player.voice_client.guild]['live_np_prog'] = await self.safe_send_message(channel, self.get_np_live_progress(player) )
 
     async def cmd_resetplaylist(self, player, channel):
         """
