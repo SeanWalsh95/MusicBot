@@ -124,6 +124,19 @@ class MusicBot(discord.Client):
                 self.config._spotify = False
                 time.sleep(5)  # make sure they see the problem
 
+    def get(self, *args, **kwargs):
+
+        str_key = self.str.get(args[0],None)
+
+        if str_key == None:
+            log.error("No such key: {}".format(args[0]))
+            return str_key
+        elif len(args) == 1:
+            return str_key.format(**kwargs).strip()
+        else:
+            return str_key.format(*args[1:], **kwargs).strip()
+
+
     # TODO: Add some sort of `denied` argument for a message to send when someone else tries to use it
     def owner_only(func):
         @wraps(func)
@@ -2233,48 +2246,113 @@ class MusicBot(discord.Client):
 
         Prints the current song queue.
         """
+        
+
+        title = 'Queue:'
+        description = ''
+        url=None
 
         lines = []
-        unlisted = 0
-        andmoretext = '* ... and %s more*' % ('x' * len(player.playlist.entries))
+        page_lines = []
+        paginate = False
 
         if player.is_playing:
             # TODO: Fix timedelta garbage with util function
-            song_progress = ftimedelta(timedelta(seconds=player.progress))
-            song_total = ftimedelta(timedelta(seconds=player.current_entry.duration))
-            prog_str = '`[%s/%s]`' % (song_progress, song_total)
+            song_progress =  '[{}/{}]'.format(
+                ftimedelta(timedelta(seconds=player.progress)),
+                ftimedelta(timedelta(seconds=player.current_entry.duration))
+            )
 
-            if player.current_entry.meta.get('channel', False) and player.current_entry.meta.get('author', False):
-                lines.append(self.str.get('cmd-queue-playing-author', "Currently playing: `{0}` added by `{1}` {2}\n").format(
-                    player.current_entry.title, player.current_entry.meta['author'].name, prog_str))
-            else:
-                lines.append(self.str.get('cmd-queue-playing-noauthor', "Currently playing: `{0}` {1}\n").format(player.current_entry.title, prog_str))
+            url = player.current_entry.url
+            title = "`{}` **{}**".format(
+                song_progress,
+                player.current_entry.title
+            )
 
 
         for i, item in enumerate(player.playlist, 1):
             if item.meta.get('channel', False) and item.meta.get('author', False):
-                nextline = self.str.get('cmd-queue-entry-author', '{0} -- `{1}` by `{2}`').format(i, item.title, item.meta['author'].name).strip()
+                nextline = self.get(
+                    'cmd-queue-entry-author',
+                    song_idx=i,
+                    duration=ftimedelta(timedelta(seconds=item.duration)),
+                    title=item.title,
+                    author=item.meta['author'].mention
+                )
             else:
-                nextline = self.str.get('cmd-queue-entry-noauthor', '{0} -- `{1}`').format(i, item.title).strip()
+                nextline = self.get(
+                    'cmd-queue-entry-noauthor',
+                    song_idx=i,
+                    duration=ftimedelta(timedelta(seconds=item.duration)),
+                    title=item.title
+                )
 
             currentlinesum = sum(len(x) + 1 for x in lines)  # +1 is for newline char
 
-            if (currentlinesum + len(nextline) + len(andmoretext) > DISCORD_MSG_CHAR_LIMIT) or (i > self.config.queue_length):
-                if currentlinesum + len(andmoretext):
-                    unlisted += 1
-                    continue
-
             lines.append(nextline)
 
-        if unlisted:
-            lines.append(self.str.get('cmd-queue-more', '\n... and %s more') % unlisted)
+            if (currentlinesum + len(nextline) + len(title) > DISCORD_MSG_CHAR_LIMIT) or (i % self.config.queue_length == 0):
+                page_lines.append(lines)
+                lines = []
+                paginate = True
 
-        if not lines:
-            lines.append(
-                self.str.get('cmd-queue-none', 'There are no songs queued! Queue something with {}play.').format(self.config.command_prefix))
+        page_lines.append(lines)
 
-        message = '\n'.join(lines)
-        return Response(message, delete_after=30)
+        if page_lines == [[]]:
+            await self.safe_send_message(channel,self.get('cmd-queue-none', self.config.command_prefix), expire_in=20)
+        else:
+            invoke_msg = _get_variable('message')
+            control_emojis = ['⏮', '◀', '▶', '⏭']
+            pages = []
+
+            for page in page_lines:
+                e = discord.Embed()
+                if url:
+                    e.url = url
+                e.title = title
+                e.description = description+'\n'.join(page)
+                pages.append(e)
+
+            if paginate:
+                pages[0].set_footer(text='({}/{}) [{} Songs]'.format(1, len(pages), len(player.playlist)))
+
+                message = await self.safe_send_message(channel,pages[0]) 
+
+                for ctrl_emj in control_emojis:
+                    await message.add_reaction(ctrl_emj)
+
+                def check(reaction, user):
+                    return reaction.message.id == message.id and reaction.emoji in control_emojis and not user.bot
+
+                cur_page=0
+
+                while True:
+                    try:
+                        reaction, user = await self.wait_for('reaction_add',check=check,timeout=45)
+                    except asyncio.TimeoutError:
+                        await self.safe_delete_message(message, quiet=True)
+                        break
+                    else:
+                        await message.remove_reaction(reaction.emoji,user)
+
+                        if user==invoke_msg.author:
+                            if reaction.emoji==control_emojis[0]:
+                                cur_page=0
+                            if reaction.emoji==control_emojis[1]:
+                                if cur_page>0:
+                                    cur_page-=1
+                            if reaction.emoji==control_emojis[2]:
+                                if cur_page<len(pages):
+                                    cur_page+=1
+                            if reaction.emoji==control_emojis[3]:
+                                cur_page=len(pages)-1
+
+                            await message.edit(embed=pages[cur_page].set_footer(text='({}/{}) [{} Songs]'.format(cur_page+1, len(pages), len(player.playlist))))
+            else:
+                message = await self.safe_send_message(channel,pages[0], expire_in=45) 
+
+
+
 
     async def cmd_clean(self, message, channel, guild, author, search_range=50):
         """
