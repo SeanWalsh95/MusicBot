@@ -2432,6 +2432,43 @@ class MusicBot(discord.Client):
 
 
 
+    async def paginate_embd_msg(self, channel, embed_pages):
+
+        orig_msg = _get_variable('message')
+        control_emojis = ['⏮', '◀', '▶', '⏭']
+
+        curr_page = 0
+        pages[0].set_footer(text='({}/{})'.format(1, len(embed_pages)))
+        root_msg = await self.safe_send_message(channel,embed_pages[0])
+
+        def check(reaction, user):
+            return reaction.message.id == root_msg.id and reaction.emoji in control_emojis and not user.bot
+
+        while True:
+            try:
+                reaction, user = await self.wait_for('reaction_add',check=check,timeout=30)
+            except asyncio.TimeoutError:
+                await self.safe_delete_message(root_msg, quiet=True)
+                break
+            else:
+                await root_msg.remove_reaction(reaction.emoji,user)
+
+                if user==orig_msg.author:
+                    if reaction.emoji==control_emojis[0]:
+                        cur_page=0
+                    if reaction.emoji==control_emojis[1]:
+                        if cur_page>0:
+                            cur_page-=1
+                    if reaction.emoji==control_emojis[2]:
+                        if cur_page<len(pages):
+                            cur_page+=1
+                    if reaction.emoji==control_emojis[3]:
+                        cur_page=len(pages)-1
+
+                    await root_msg.edit(embed=pages[cur_page].set_footer(text='({}/{}) [{} Songs]'.format(cur_page+1, len(pages), len(player.playlist))))
+
+
+
 
     async def cmd_clean(self, message, channel, guild, author, search_range=50):
         """
