@@ -1124,6 +1124,14 @@ class MusicBot(discord.Client):
 
             print(flush=True)
 
+            # Clear old messages from bot in channels
+            def check(message):
+                return message.author == self.user
+            for ch in chlist:
+                if self.user.bot:
+                    if ch.permissions_for(ch.guild.me).manage_messages:
+                        deleted = await ch.purge(check=check, limit=50)
+
         else:
             log.info("Not bound to any text channels")
 
