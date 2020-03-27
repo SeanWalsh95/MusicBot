@@ -1206,9 +1206,6 @@ class MusicBot(discord.Client):
         e.set_author(name=self.user.name, url='https://github.com/Just-Some-Bots/MusicBot', icon_url=self.user.avatar_url)
         return e
 
-    async def cmd_pbar(self, player, channel):
-        self.server_specific_data[player.voice_client.guild]['live_np_prog'] = await self.safe_send_message(channel, self.get_np_live_progress(player) )
-
     async def cmd_resetplaylist(self, player, channel):
         """
         Usage:
@@ -1927,60 +1924,18 @@ class MusicBot(discord.Client):
         """
 
         if player.current_entry:
-            if self.server_specific_data[guild]['last_np_msg']:
-                await self.safe_delete_message(self.server_specific_data[guild]['last_np_msg'])
-                self.server_specific_data[guild]['last_np_msg'] = None
+            prev_pbar = self.server_specific_data[player.voice_client.guild].get('live_np_prog', None)
+            if prev_pbar:
+                await self.safe_delete_message(prev_pbar, quiet=True)
+            self.server_specific_data[player.voice_client.guild]['live_np_prog'] = await self.safe_send_message(channel, self.get_np_live_progress(player) )
 
-            # TODO: Fix timedelta garbage with util function
-            song_progress = ftimedelta(timedelta(seconds=player.progress))
-            song_total = ftimedelta(timedelta(seconds=player.current_entry.duration))
-
-            streaming = isinstance(player.current_entry, StreamPlaylistEntry)
-            prog_str = ('`[{progress}]`' if streaming else '`[{progress}/{total}]`').format(
-                progress=song_progress, total=song_total
-            )
-            prog_bar_str = ''
-
-            # percentage shows how much of the current song has already been played
-            percentage = 0.0
-            if player.current_entry.duration > 0:
-                percentage = player.progress / player.current_entry.duration
-
-            # create the actual bar
-            progress_bar_length = 30
-            for i in range(progress_bar_length):
-                if (percentage < 1 / progress_bar_length * i):
-                    prog_bar_str += '□'
-                else:
-                    prog_bar_str += '■'
-
-            action_text = self.str.get('cmd-np-action-streaming', 'Streaming') if streaming else self.str.get('cmd-np-action-playing', 'Playing')
-
-            if player.current_entry.meta.get('channel', False) and player.current_entry.meta.get('author', False):
-                np_text = self.str.get('cmd-np-reply-author', "Now {action}: **{title}** added by **{author}**\nProgress: {progress_bar} {progress}\n\N{WHITE RIGHT POINTING BACKHAND INDEX} <{url}>").format(
-                    action=action_text,
-                    title=player.current_entry.title,
-                    author=player.current_entry.meta['author'].name,
-                    progress_bar=prog_bar_str,
-                    progress=prog_str,
-                    url=player.current_entry.url
-                )
-            else:
-
-                np_text = self.str.get('cmd-np-reply-noauthor', "Now {action}: **{title}**\nProgress: {progress_bar} {progress}\n\N{WHITE RIGHT POINTING BACKHAND INDEX} <{url}>").format(
-
-                    action=action_text,
-                    title=player.current_entry.title,
-                    progress_bar=prog_bar_str,
-                    progress=prog_str,
-                    url=player.current_entry.url
-                )
-
-            self.server_specific_data[guild]['last_np_msg'] = await self.safe_send_message(channel, np_text)
             await self._manual_delete_check(message)
         else:
             return Response(
-                self.str.get('cmd-np-none', 'There are no songs queued! Queue something with {0}play.') .format(self.config.command_prefix),
+                self.get(
+                    'cmd-np-none',
+                    self.config.command_prefix
+                ),
                 delete_after=30
             )
 
