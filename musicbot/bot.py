@@ -157,7 +157,7 @@ class MusicBot(discord.Client):
                 pass
                 # print("ERR NP Task: {}".format(e))
 
-            await asyncio.sleep(10)
+            await asyncio.sleep(15)
 
     # TODO: Add some sort of `denied` argument for a message to send when someone else tries to use it
     def owner_only(func):
@@ -504,17 +504,18 @@ class MusicBot(discord.Client):
         if author:
             e.description= '{}{}`{}`\n{}'.format(
                 {True: '▶', False: '⏸️'}[player.is_playing],
-                progress_bar(float(player.progress)/player.current_entry.duration, divs=24),
+                progress_bar(float(player.progress)/player.current_entry.duration, divs=12),
                 '[{}/{}]'.format(song_progress, song_total),
                 author.mention
             )
         else:
             e.description= '{}{}`{}`'.format(
                 {True: '▶', False: '⏸️'}[player.is_playing],
-                progress_bar(float(player.progress)/player.current_entry.duration, divs=24),
+                progress_bar(float(player.progress)/player.current_entry.duration, divs=12),
                 '[{}/{}]'.format(song_progress, song_total)
             )
-    
+        e.set_footer(text='In: {}'.format(player.voice_client.channel.name))
+
         return e
 
     def get_np_embed(self, player, footer=None):
@@ -540,6 +541,7 @@ class MusicBot(discord.Client):
             e.set_footer(text=footer)
 
         return e
+    
     async def on_player_play(self, player, entry):
         log.debug('Running on_player_play')
         await self.update_now_playing_status(entry)
