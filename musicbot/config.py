@@ -86,6 +86,11 @@ class Config:
         self.i18n_file = config.get('Files', 'i18nFile', fallback=ConfigDefaults.i18n_file)
         self.auto_playlist_removed_file = None
 
+        self.invoking_whitelist = config.get('MusicBot', 'InvokingWhitelsit', fallback=ConfigDefaults.invoking_whitelist).replace(' ','').split(',')
+        if self.invoking_whitelist == ['']:
+            self.invoking_whitelist = []
+
+
         self.run_checks()
 
         self.missing_keys = set()
@@ -364,6 +369,8 @@ class ConfigDefaults:
     legacy_skip = False
     leavenonowners = False
     usealias = True
+
+    invoking_whitelist='play'
 
     options_file = 'config/options.ini'
     blacklist_file = 'config/blacklist.txt'
