@@ -1210,8 +1210,8 @@ class MusicBot(discord.Client):
         """Provides a basic template for embeds"""
         e = discord.Embed()
         e.colour = 7506394
-        e.set_footer(text='Just-Some-Bots/MusicBot ({})'.format(BOTVERSION), icon_url='https://i.imgur.com/gFHBoZA.png')
-        e.set_author(name=self.user.name, url='https://github.com/Just-Some-Bots/MusicBot', icon_url=self.user.avatar_url)
+        # e.set_footer(text='Just-Some-Bots/MusicBot ({})'.format(BOTVERSION), icon_url='https://i.imgur.com/gFHBoZA.png')
+        # e.set_author(name=self.user.name, url='https://github.com/Just-Some-Bots/MusicBot', icon_url=self.user.avatar_url)
         return e
 
     async def cmd_resetplaylist(self, player, channel):
@@ -2288,8 +2288,6 @@ class MusicBot(discord.Client):
 
         Prints the current song queue.
         """
-        
-
         title = 'Queue:'
         description = ''
         url=None
@@ -2392,9 +2390,6 @@ class MusicBot(discord.Client):
                             await message.edit(embed=pages[cur_page].set_footer(text='({}/{}) [{} Songs]'.format(cur_page+1, len(pages), len(player.playlist))))
             else:
                 message = await self.safe_send_message(channel,pages[0], expire_in=45) 
-
-
-
 
     async def cmd_clean(self, message, channel, guild, author, search_range=50):
         """
@@ -2934,7 +2929,7 @@ class MusicBot(discord.Client):
             if response and isinstance(response, Response):
                 if not isinstance(response.content, discord.Embed) and self.config.embeds:
                     content = self._gen_embed()
-                    content.title = command
+                    # content.title = command
                     content.description = response.content
                 else:
                     content = response.content
